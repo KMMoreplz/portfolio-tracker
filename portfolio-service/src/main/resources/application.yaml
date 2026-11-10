@@ -11,7 +11,11 @@ spring:
 notifications:
   webhook-url: ${NOTIFICATIONS_WEBHOOK_URL:}
 
+# market-data-service: котировки, дивиденды и новости для страниц бумаги,
+# дивидендного календаря и графика стоимости. Пустое значение — интеграция выключена.
 app:
+  market-data:
+    base-url: ${MARKET_DATA_BASE_URL:http://localhost:8081}
   security:
     jwt:
       # Общий секрет подписи HS256: в проде задаётся через переменную JWT_SECRET.

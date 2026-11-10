@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -55,5 +56,18 @@ public class PriceQuoteRepository {
                 .param("ticker", ticker)
                 .query(ROW_MAPPER)
                 .optional();
+    }
+
+    /** Все сохранённые котировки тикера по возрастанию времени — для графика стоимости. */
+    public List<Quote> findByTicker(String ticker) {
+        return jdbcClient.sql("""
+                SELECT ticker, price, currency, quoted_at, source
+                FROM price_quotes
+                WHERE ticker = :ticker
+                ORDER BY quoted_at ASC
+                """)
+                .param("ticker", ticker)
+                .query(ROW_MAPPER)
+                .list();
     }
 }

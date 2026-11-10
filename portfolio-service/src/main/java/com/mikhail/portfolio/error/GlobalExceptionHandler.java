@@ -1,5 +1,6 @@
 package com.mikhail.portfolio.error;
 
+import com.mikhail.portfolio.marketdata.MarketDataUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -91,6 +92,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleNoExchangeRate(NoExchangeRateException e,
                                                          HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, e.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(MarketDataUnavailableException.class)
+    public ResponseEntity<ApiError> handleMarketDataUnavailable(MarketDataUnavailableException e,
+                                                                HttpServletRequest request) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), request, null);
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request,
