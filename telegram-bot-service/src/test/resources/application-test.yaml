@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:bot-test;DB_CLOSE_DELAY=-1
+
+bot:
+  reminder:
+    # в тестах расписание напоминаний не должно срабатывать само
+    initial-delay-ms: 36000000

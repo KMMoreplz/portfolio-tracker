@@ -1,6 +1,16 @@
 spring:
   application:
     name: telegram-bot-service
+  # Своя маленькая БД бота (H2): только chat id ↔ user id и журнал напоминаний.
+  # Бизнес-данные портфеля бот не хранит — они остаются в portfolio-service.
+  datasource:
+    url: ${BOT_DB_URL:jdbc:h2:file:./data/bot-db;DB_CLOSE_ON_EXIT=FALSE}
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
 
 telegram:
   bot-token: ${TELEGRAM_BOT_TOKEN:}
@@ -10,6 +20,16 @@ telegram:
 
 portfolio-service:
   base-url: ${PORTFOLIO_SERVICE_URL:http://localhost:8080}
+
+bot:
+  alerts:
+    # Порог алерта по умолчанию, пока пользователь не задал свой в веб-приложении.
+    default-threshold-percent: 5.0
+  reminder:
+    # Напоминания о дивидендах: проверка раз в час, за lookahead-days дней до выплаты.
+    interval-ms: 3600000
+    initial-delay-ms: 60000
+    lookahead-days: 3
 
 server:
   port: 8082

@@ -51,6 +51,33 @@ public class UserSettingsRepository {
                 .update();
     }
 
+    /**
+     * Активный код привязки: строка с кодом, у которой срок жизни не истёк.
+     * Просроченные коды не находятся и считаются не выданными.
+     */
+    public Optional<UserSettings> findActiveLinkCode(String code) {
+        return jdbcClient.sql("""
+                SELECT %s FROM user_settings
+                WHERE telegram_link_code = :code AND telegram_link_code_expires_at > now()
+                """.formatted(COLUMNS))
+                .param("code", code)
+                .query(ROW_MAPPER)
+                .optional();
+    }
+
+    /** Гасит код привязки: использованный код не должен сработать повторно. */
+    public void clearLinkCode(Long userId) {
+        jdbcClient.sql("""
+                UPDATE user_settings
+                SET telegram_link_code = NULL,
+                    telegram_link_code_expires_at = NULL,
+                    updated_at = now()
+                WHERE user_id = :userId
+                """)
+                .param("userId", userId)
+                .update();
+    }
+
     /** Сохраняет новый одноразовый код привязки, заменяя предыдущий. */
     public void saveLinkCode(Long userId, String code, OffsetDateTime expiresAt) {
         jdbcClient.sql("""

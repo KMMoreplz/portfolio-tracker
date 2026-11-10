@@ -38,12 +38,20 @@ public class JwtService {
 
     /** Подписанный токен для пользователя с указанным email. */
     public String issueToken(String email, Long userId) {
+        return issueToken(email, userId, ttl);
+    }
+
+    /**
+     * Подписанный токен с собственным временем жизни — так telegram-bot-service
+     * получает долгоживущий токен для REST-вызовов от имени пользователя.
+     */
+    public String issueToken(String email, Long userId, Duration tokenTtl) {
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer("portfolio-service")
                 .subject(email)
                 .issuedAt(now)
-                .expiresAt(now.plus(ttl))
+                .expiresAt(now.plus(tokenTtl))
                 .claim("userId", userId)
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();

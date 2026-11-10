@@ -35,7 +35,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/portfolio_db
       SPRING_DATASOURCE_USERNAME: portfolio
       SPRING_DATASOURCE_PASSWORD: portfolio
-      MARKET_DATA_WEBHOOK_URL: http://telegram-bot-service:8082/api/events
+      MARKET_DATA_WEBHOOK_URL: http://telegram-bot-service:8082/api/events/price
       T_INVEST_TOKEN: ${T_INVEST_TOKEN:-}
     ports:
       - "8081:8081"
@@ -73,6 +73,10 @@ services:
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       PORTFOLIO_SERVICE_URL: http://portfolio-service:8080
+      # своя маленькая БД бота (chat id ↔ user id) на постоянном томе
+      BOT_DB_URL: jdbc:h2:file:/app/data/bot-db;DB_CLOSE_ON_EXIT=FALSE
+    volumes:
+      - bot-data:/app/data
     ports:
       - "8082:8082"
     depends_on:
@@ -95,3 +99,4 @@ services:
 
 volumes:
   portfolio-pgdata:
+  bot-data:

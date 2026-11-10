@@ -2,6 +2,7 @@ package com.mikhail.telegrambot.web;
 
 import com.mikhail.telegrambot.notification.NotificationService;
 import com.mikhail.telegrambot.notification.PortfolioEvent;
+import com.mikhail.telegrambot.notification.PriceAlertEvent;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,11 +37,30 @@ public class EventController {
                 dto.averagePrice(),
                 dto.currency(),
                 dto.occurredAt());
-        int delivered = notificationService.notifySubscribers(event);
+        int delivered = notificationService.notifyPortfolioEvent(event);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new DeliveryResultDto(delivered));
     }
 
     /** Сколько подписчиков получило уведомление (0 — подписчиков нет). */
     public record DeliveryResultDto(int delivered) {
+    }
+
+    /**
+     * Событие об изменении цены от market-data-service (REST-вебхук).
+     * Контракт: POST /api/events/price, тело — PriceEventRequestDto,
+     * ответ — сколько чатов получило алерт.
+     */
+    @PostMapping("/price")
+    public ResponseEntity<DeliveryResultDto> receivePrice(@Valid @RequestBody PriceEventRequestDto dto) {
+        PriceAlertEvent event = new PriceAlertEvent(
+                dto.ticker(),
+                dto.previousPrice(),
+                dto.newPrice(),
+                dto.changePercent(),
+                dto.currency(),
+                dto.quotedAt(),
+                dto.source());
+        int delivered = notificationService.notifyPriceChange(event);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(new DeliveryResultDto(delivered));
     }
 }

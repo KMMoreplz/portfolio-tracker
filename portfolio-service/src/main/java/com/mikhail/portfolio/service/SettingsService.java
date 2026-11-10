@@ -9,6 +9,7 @@ import com.mikhail.portfolio.web.UpdateSettingsRequestDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -58,6 +59,32 @@ public class SettingsService {
         String code = String.format("%06d", RANDOM.nextInt(1_000_000));
         userSettingsRepository.saveLinkCode(user.getId(), code, OffsetDateTime.now().plus(LINK_CODE_TTL));
         return get(user);
+    }
+
+    /**
+     * Погашает одноразовый код привязки: находит пользователя по активному коду
+     * и немедленно гасит код, чтобы он не сработал повторно.
+     *
+     * @return данные пользователя для привязки; пусто, если код не найден или истёк
+     */
+    @Transactional
+    public Optional<LinkGrant> consumeLinkCode(String code) {
+        return userSettingsRepository.findActiveLinkCode(code).map(settings -> {
+            userSettingsRepository.clearLinkCode(settings.userId());
+            User user = userRepository.findById(settings.userId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Пользователь по коду привязки не найден: " + settings.userId()));
+            return new LinkGrant(user, settings.priceAlertThreshold());
+        });
+    }
+
+    /**
+     * Результат погашения кода привязки.
+     *
+     * @param user                пользователь, которому принадлежал код
+     * @param priceAlertThreshold порог алертов из настроек, null — не задан
+     */
+    public record LinkGrant(User user, BigDecimal priceAlertThreshold) {
     }
 
     /** Пользователь из проверенного токена: subject — email учётной записи. */

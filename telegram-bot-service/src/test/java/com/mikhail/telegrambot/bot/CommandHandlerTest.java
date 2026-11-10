@@ -1,168 +1,208 @@
 package com.mikhail.telegrambot.bot;
 
-import com.mikhail.telegrambot.error.PortfolioNotFoundException;
-import com.mikhail.telegrambot.error.PortfolioServiceUnavailableException;
+import com.mikhail.telegrambot.binding.BindingService;
+import com.mikhail.telegrambot.config.BotProperties;
 import com.mikhail.telegrambot.notification.NotificationService;
-import com.mikhail.telegrambot.notification.SubscriptionStore;
-import com.mikhail.telegrambot.portfolio.PortfolioClient;
-import com.mikhail.telegrambot.portfolio.PortfolioSnapshot;
-import com.mikhail.telegrambot.portfolio.PositionSnapshot;
+import com.mikhail.telegrambot.portfolio.DividendCalendar;
+import com.mikhail.telegrambot.portfolio.DividendItem;
+import com.mikhail.telegrambot.portfolio.LinkResult;
+import com.mikhail.telegrambot.portfolio.PortfolioMetrics;
+import com.mikhail.telegrambot.support.InMemoryBindingStore;
+import com.mikhail.telegrambot.support.InMemorySentNotificationStore;
+import com.mikhail.telegrambot.support.StubPortfolioClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Команды бота: привязка по коду, сводка портфеля, дивиденды, алерты.
+ * Telegram и сеть не используются — только заглушки.
+ */
 class CommandHandlerTest {
 
-    private SubscriptionStore subscriptionStore;
     private StubPortfolioClient portfolioClient;
+    private BindingService bindingService;
     private CommandHandler commandHandler;
 
     @BeforeEach
     void setUp() {
-        subscriptionStore = new SubscriptionStore();
         portfolioClient = new StubPortfolioClient();
-        NotificationService notificationService =
-                new NotificationService(subscriptionStore, (chatId, text) -> { });
-        commandHandler = new CommandHandler(notificationService, portfolioClient);
+        bindingService = new BindingService(new InMemoryBindingStore());
+        commandHandler = new CommandHandler(bindingService, portfolioClient);
     }
 
     @Test
-    void help_returnsCommandList() {
+    void help_listsAllCommands() {
         String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/help"));
 
-        assertThat(reply).contains("/subscribe").contains("/digest");
+        assertThat(reply)
+                .contains("/start")
+                .contains("/portfolio")
+                .contains("/dividends")
+                .contains("/alerts")
+                .contains("/unlink");
     }
 
     @Test
-    void start_returnsSameAsHelp() {
+    void startWithoutCode_explainsHowToGetCode() {
         String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/start"));
 
-        assertThat(reply).contains("/subscribe");
+        assertThat(reply).contains("Настройки").contains("/start <код>");
     }
 
     @Test
-    void subscribe_storesChatForExistingPortfolio() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe 1"));
+    void startWithValidCode_bindsChat() {
+        portfolioClient.linkResult = new LinkResult(7L, "user@example.com", "jwt-token", 2592000,
+                new BigDecimal("5"));
 
-        assertThat(reply).contains("подписан");
-        assertThat(subscriptionStore.subscribersOf(1L)).containsExactly(100L);
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/start 123456"));
+
+        assertThat(reply).contains("user@example.com").contains("Уведомления включены");
+        assertThat(bindingService.find(100L)).isPresent();
+        assertThat(bindingService.find(100L).get().token()).isEqualTo("jwt-token");
+        assertThat(bindingService.find(100L).get().userId()).isEqualTo(7L);
     }
 
     @Test
-    void subscribe_twice_reportsAlreadySubscribed() {
-        commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe 1"));
+    void startWithInvalidCode_explains() {
+        portfolioClient.linkResult = null;
 
-        String reply = commandHandler.handle(new BotUpdate(2L, 100L, "/subscribe 1"));
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/start 123456"));
 
-        assertThat(reply).contains("уже подписан");
+        assertThat(reply).contains("не подошёл");
+        assertThat(bindingService.find(100L)).isEmpty();
     }
 
     @Test
-    void subscribe_unknownPortfolio_returnsNotFound() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe 999"));
+    void startWithWrongArgument_showsUsage() {
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/start abc"));
 
-        assertThat(reply).isEqualTo("Портфель #999 не найден.");
-        assertThat(subscriptionStore.subscribersOf(999L)).isEmpty();
+        assertThat(reply).contains("Использование");
     }
 
     @Test
-    void subscribe_withoutArgument_returnsUsage() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe"));
+    void startWhenBackendDown_politelyReportsError() {
+        portfolioClient.linkUnavailable = true;
 
-        assertThat(reply).isEqualTo("Использование: /subscribe <id портфеля>");
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/start 123456"));
+
+        assertThat(reply).contains("временно недоступен");
     }
 
     @Test
-    void subscribe_nonNumericArgument_returnsUsage() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe abc"));
+    void portfolio_withoutBinding_asksToLink() {
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/portfolio"));
 
-        assertThat(reply).isEqualTo("Использование: /subscribe <id портфеля>");
+        assertThat(reply).contains("не привязан");
     }
 
     @Test
-    void subscribe_withBotSuffix_isAccepted() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe@MyBot 1"));
+    void portfolio_showsTotalValueProfitAndTopPositions() {
+        bindDefault();
+        portfolioClient.portfolios.clear();
+        portfolioClient.metrics.clear();
+        portfolioClient.addPortfolioWithTicker(1L, "SBER");
+        portfolioClient.addPortfolioWithTicker(2L, "GAZP");
 
-        assertThat(reply).contains("подписан");
-        assertThat(subscriptionStore.subscribersOf(1L)).containsExactly(100L);
-    }
-
-    @Test
-    void subscribe_portfolioServiceDown_returnsFriendlyMessage() {
-        portfolioClient.failWith = new PortfolioServiceUnavailableException("down", null);
-
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/subscribe 1"));
-
-        assertThat(reply).isEqualTo("Сервис портфелей недоступен, попробуйте позже.");
-    }
-
-    @Test
-    void unsubscribe_reportsWhenChatWasNotSubscribed() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/unsubscribe 1"));
-
-        assertThat(reply).contains("не был подписан");
-    }
-
-    @Test
-    void digest_returnsPortfolioComposition() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/digest 1"));
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/portfolio"));
 
         assertThat(reply)
-                .contains("Портфель «Основной»")
+                .contains("Стоимость: 2000 RUB")
+                .contains("Результат (P&L): +200 RUB")
+                .contains("Крупнейшие позиции")
                 .contains("SBER")
-                .contains("10 шт.");
+                .contains("GAZP");
     }
 
     @Test
-    void digest_unknownPortfolio_returnsNotFound() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/digest 999"));
+    void portfolio_whenTokenExpired_suggestsRelink() {
+        bindDefault();
+        portfolioClient.tokenExpired = true;
 
-        assertThat(reply).isEqualTo("Портфель #999 не найден.");
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/portfolio"));
+
+        assertThat(reply).contains("устарела");
     }
 
     @Test
-    void unknownCommand_returnsHint() {
-        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/ping"));
+    void dividends_listsNearestPayments() {
+        bindDefault();
+        portfolioClient.portfolios.clear();
+        portfolioClient.addPortfolioWithTicker(1L, "SBER");
+        portfolioClient.addDividend(1L, new DividendItem("SBER", "Сбербанк",
+                LocalDate.now().plusDays(5), LocalDate.now().plusDays(2),
+                new BigDecimal("33"), "RUB", new BigDecimal("330"), new BigDecimal("330")));
+
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/dividends"));
+
+        assertThat(reply).contains("Ближайшие дивиденды").contains("SBER");
+    }
+
+    @Test
+    void dividends_withoutPayments_reportsEmpty() {
+        bindDefault();
+        portfolioClient.portfolios.clear();
+
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/dividends"));
+
+        assertThat(reply).contains("Ближайших дивидендных выплат нет");
+    }
+
+    @Test
+    void dividends_whenMarketDataDown_reportsUnavailable() {
+        bindDefault();
+        portfolioClient.portfolios.clear();
+        portfolioClient.addPortfolioWithTicker(1L, "SBER");
+        portfolioClient.calendars.put(1L, new DividendCalendar(1L, "RUB", false, List.of()));
+
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/dividends"));
+
+        assertThat(reply).contains("временно недоступны");
+    }
+
+    @Test
+    void alerts_onAndOff_toggleSubscription() {
+        bindDefault();
+
+        String off = commandHandler.handle(new BotUpdate(1L, 100L, "/alerts off"));
+        assertThat(off).contains("выключены");
+        assertThat(bindingService.find(100L).get().alertsEnabled()).isFalse();
+
+        String on = commandHandler.handle(new BotUpdate(1L, 100L, "/alerts on"));
+        assertThat(on).contains("включены");
+        assertThat(bindingService.find(100L).get().alertsEnabled()).isTrue();
+    }
+
+    @Test
+    void alerts_withoutBinding_asksToLink() {
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/alerts on"));
+
+        assertThat(reply).contains("не привязан");
+    }
+
+    @Test
+    void unlink_removesBinding() {
+        bindDefault();
+
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/unlink"));
+
+        assertThat(reply).contains("отвязан");
+        assertThat(bindingService.find(100L)).isEmpty();
+    }
+
+    @Test
+    void unknownCommand_pointsToHelp() {
+        String reply = commandHandler.handle(new BotUpdate(1L, 100L, "/zzz"));
 
         assertThat(reply).contains("/help");
     }
 
-    @Test
-    void emptyMessage_returnsNull() {
-        assertThat(commandHandler.handle(new BotUpdate(1L, 100L, "   "))).isNull();
-        assertThat(commandHandler.handle(new BotUpdate(1L, 100L, null))).isNull();
-    }
-
-    /** Заглушка portfolio-service: портфель 1 существует, остальные — нет. */
-    private static final class StubPortfolioClient implements PortfolioClient {
-
-        private RuntimeException failWith;
-
-        @Override
-        public Optional<PortfolioSnapshot> getPortfolio(long portfolioId) {
-            if (failWith != null) {
-                throw failWith;
-            }
-            return portfolioId == 1L
-                    ? Optional.of(new PortfolioSnapshot(1L, "Основной", "RUB"))
-                    : Optional.empty();
-        }
-
-        @Override
-        public List<PositionSnapshot> getPositions(long portfolioId) {
-            if (failWith != null) {
-                throw failWith;
-            }
-            if (portfolioId != 1L) {
-                throw new PortfolioNotFoundException(portfolioId);
-            }
-            return List.of(new PositionSnapshot("SBER", "Сбербанк",
-                    new BigDecimal("10.00000000"), new BigDecimal("310.50000000"), "RUB"));
-        }
+    private void bindDefault() {
+        bindingService.bind(100L, new LinkResult(7L, "user@example.com", "jwt-token", 2592000, null));
     }
 }

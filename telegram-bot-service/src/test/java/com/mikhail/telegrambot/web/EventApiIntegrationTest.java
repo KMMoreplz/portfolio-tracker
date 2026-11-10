@@ -1,7 +1,10 @@
 package com.mikhail.telegrambot.web;
 
+import com.mikhail.telegrambot.binding.BindingService;
 import com.mikhail.telegrambot.bot.RecordingTelegramGateway;
-import com.mikhail.telegrambot.notification.NotificationService;
+import com.mikhail.telegrambot.portfolio.LinkResult;
+import com.mikhail.telegrambot.portfolio.PortfolioClient;
+import com.mikhail.telegrambot.support.StubPortfolioClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,7 +14,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -19,12 +25,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Сценарий уведомления через REST: подписка чата на портфель, событие
- * от portfolio-service, доставка сообщения. Telegram не используется —
- * записывается {@link RecordingTelegramGateway}.
+ * Сценарий уведомлений через REST: привязка чата, событие портфеля от
+ * portfolio-service и алерт на изменение цены от market-data-service.
+ * Telegram не используется — сообщения записывает {@link RecordingTelegramGateway};
+ * portfolio-service подменён {@link StubPortfolioClient}.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 class EventApiIntegrationTest {
 
     @TestConfiguration
@@ -35,43 +43,79 @@ class EventApiIntegrationTest {
         RecordingTelegramGateway recordingTelegramGateway() {
             return new RecordingTelegramGateway();
         }
+
+        @Bean
+        @Primary
+        StubPortfolioClient stubPortfolioClient() {
+            return new StubPortfolioClient();
+        }
     }
 
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
-    private NotificationService notificationService;
+    private BindingService bindingService;
+
+    @Autowired
+    private StubPortfolioClient portfolioClient;
 
     @Autowired
     private RecordingTelegramGateway gateway;
 
     @BeforeEach
-    void clearGateway() {
+    void setUp() {
         gateway.clear();
+        portfolioClient.portfolios.clear();
+        portfolioClient.metrics.clear();
+        portfolioClient.calendars.clear();
+        portfolioClient.threshold = null;
+        portfolioClient.tokenExpired = false;
+        portfolioClient.unavailable = false;
+        bindingService.unbind(100L);
+        bindingService.unbind(200L);
     }
 
     @Test
-    void subscribeThenEvent_deliversFormattedMessageToChat() throws Exception {
-        notificationService.subscribe(100L, 1L);
+    void portfolioEvent_deliversFormattedMessageToBoundChats() throws Exception {
+        bindingService.bind(100L, link());
+        bindingService.bind(200L, link());
 
         mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(eventJson("POSITION_CREATED", 1)))
                 .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.delivered").value(2));
+
+        assertThat(gateway.messages()).hasSize(2);
+        assertThat(gateway.messages())
+                .allSatisfy(message -> assertThat(message.text()).contains("SBER"));
+    }
+
+    @Test
+    void priceChange_aboveThreshold_deliversAlertToHoldingChat() throws Exception {
+        bindingService.bind(100L, link());
+        portfolioClient.addPortfolioWithTicker(1L, "SBER");
+
+        mockMvc.perform(post("/api/events/price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(priceJson("6.2"))
+                        )
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.delivered").value(1));
 
         assertThat(gateway.messages()).hasSize(1);
-        assertThat(gateway.messages().get(0).chatId()).isEqualTo(100L);
-        assertThat(gateway.messages().get(0).text())
-                .isEqualTo("Портфель #1: добавлена позиция SBER: 10 шт. по 310.5 RUB");
+        assertThat(gateway.messages().getFirst().text()).contains("SBER").contains("Порог алерта");
     }
 
     @Test
-    void eventWithoutSubscribers_reportsZeroDelivered() throws Exception {
-        mockMvc.perform(post("/api/events")
+    void priceChange_belowThreshold_deliversNothing() throws Exception {
+        bindingService.bind(100L, link());
+        portfolioClient.addPortfolioWithTicker(1L, "SBER");
+
+        mockMvc.perform(post("/api/events/price")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(eventJson("POSITION_UPDATED", 42)))
+                        .content(priceJson("2.0")))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.delivered").value(0));
 
@@ -79,50 +123,31 @@ class EventApiIntegrationTest {
     }
 
     @Test
-    void eventAfterUnsubscribe_isNotDelivered() throws Exception {
-        notificationService.subscribe(100L, 1L);
-        notificationService.unsubscribe(100L, 1L);
-
-        mockMvc.perform(post("/api/events")
+    void priceChange_withoutTicker_isRejected() throws Exception {
+        mockMvc.perform(post("/api/events/price")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(eventJson("POSITION_DELETED", 1)))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.delivered").value(0));
-
-        assertThat(gateway.messages()).isEmpty();
-    }
-
-    @Test
-    void event_missingEventType_returns400WithFieldError() throws Exception {
-        mockMvc.perform(post("/api/events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"portfolioId\":1}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("eventType"));
-    }
-
-    @Test
-    void event_missingPortfolioId_returns400WithFieldError() throws Exception {
-        mockMvc.perform(post("/api/events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"eventType\":\"POSITION_CREATED\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("portfolioId"));
-    }
-
-    @Test
-    void event_unknownEventType_returns400() throws Exception {
-        mockMvc.perform(post("/api/events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"eventType\":\"NEWS\",\"portfolioId\":1}"))
+                        .content("""
+                                {"event":"PRICE_CHANGED","newPrice":310.5,"changePercent":6.2}
+                                """))
                 .andExpect(status().isBadRequest());
+    }
+
+    private static LinkResult link() {
+        return new LinkResult(7L, "user@example.com", "jwt-token", 2592000,
+                new BigDecimal("5"));
     }
 
     private static String eventJson(String eventType, long portfolioId) {
         return """
-                {"eventType":"%s","portfolioId":%d,"positionId":5,"ticker":"SBER",
-                 "quantity":10,"averagePrice":310.5,"currency":"RUB",
-                 "occurredAt":"2026-11-10T16:00:00+03:00"}
+                {"eventType":"%s","portfolioId":%d,"ticker":"SBER","quantity":10,
+                 "averagePrice":310.5,"currency":"RUB"}
                 """.formatted(eventType, portfolioId);
+    }
+
+    private static String priceJson(String changePercent) {
+        return """
+                {"event":"PRICE_CHANGED","ticker":"SBER","previousPrice":295.6,
+                 "newPrice":310.5,"changePercent":%s,"currency":"RUB","source":"moex-iss"}
+                """.formatted(changePercent);
     }
 }

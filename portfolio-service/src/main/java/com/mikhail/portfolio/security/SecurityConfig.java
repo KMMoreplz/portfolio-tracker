@@ -40,6 +40,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        // привязка Telegram-бота по одноразовому коду: секретность — сам код
+                        .requestMatchers(HttpMethod.POST, "/api/telegram/link").permitAll()
                         .requestMatchers("/", "/app.js", "/styles.css", "/favicon.ico", "/error").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex

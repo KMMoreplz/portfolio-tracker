@@ -44,6 +44,13 @@ public class UserRepository {
                 .optional();
     }
 
+    public Optional<User> findById(Long id) {
+        return jdbcClient.sql("SELECT %s FROM users WHERE id = :id".formatted(COLUMNS))
+                .param("id", id)
+                .query(ROW_MAPPER)
+                .optional();
+    }
+
     public boolean existsByEmail(String email) {
         Integer count = jdbcClient.sql("SELECT count(*) FROM users WHERE email = :email")
                 .param("email", email)

@@ -88,6 +88,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, e.getMessage(), request, null);
     }
 
+    @ExceptionHandler(InvalidLinkCodeException.class)
+    public ResponseEntity<ApiError> handleInvalidLinkCode(InvalidLinkCodeException e,
+                                                          HttpServletRequest request) {
+        return build(HttpStatus.UNAUTHORIZED, e.getMessage(), request, null);
+    }
+
     @ExceptionHandler(NoExchangeRateException.class)
     public ResponseEntity<ApiError> handleNoExchangeRate(NoExchangeRateException e,
                                                          HttpServletRequest request) {
