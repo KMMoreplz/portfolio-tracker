@@ -1,26 +1,34 @@
 package com.mikhail.portfolio;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -41,10 +49,27 @@ class PortfolioApiIntegrationTest {
     }
 
     @Autowired
-    private MockMvc mockMvc;
+    private WebApplicationContext context;
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    private MockMvc mockMvc;
+
+    /** Токен выдаётся один раз на прогон класса: API теперь требует аутентификацию. */
+    private static String authToken;
+
+    @BeforeEach
+    void setUpAuthenticatedMockMvc() throws Exception {
+        if (authToken == null) {
+            authToken = registerOnce();
+        }
+        // Authorization подставляется во все запросы как значение по умолчанию
+        mockMvc = MockMvcBuilders.webAppContextSetup(context)
+                .defaultRequest(get("/")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + authToken))
+                .build();
+    }
 
     @Autowired
     private JdbcClient jdbcClient;
@@ -240,6 +265,34 @@ class PortfolioApiIntegrationTest {
                 .andExpect(status().isNoContent());
 
         assertThat(countPositions(portfolioId)).isZero();
+    }
+
+    @Test
+    void dashboardPage_isServedWithAssets() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Портфель-трекер")))
+                .andExpect(content().string(containsString("/app.js")));
+
+        mockMvc.perform(get("/app.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("API_BASE")));
+
+        mockMvc.perform(get("/styles.css"))
+                .andExpect(status().isOk());
+    }
+
+    private String registerOnce() throws Exception {
+        MockMvc rawMockMvc = MockMvcBuilders.webAppContextSetup(context).build();
+        MvcResult result = rawMockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email": "%s", "password": "integration-test-password"}
+                                """.formatted("integration-" + UUID.randomUUID() + "@example.com")))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        return body.get("accessToken").asString();
     }
 
     private int countPositions(long portfolioId) {
