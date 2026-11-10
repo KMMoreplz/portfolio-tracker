@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: telegram-bot-service
+
+telegram:
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  api-base-url: https://api.telegram.org
+  poll-timeout-seconds: 30
+  poll-interval-ms: 1000
+
+portfolio-service:
+  base-url: ${PORTFOLIO_SERVICE_URL:http://localhost:8080}
+
+server:
+  port: 8082

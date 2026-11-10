@@ -1,6 +1,8 @@
 package com.mikhail.portfolio.web;
 
 import com.mikhail.portfolio.model.Position;
+import com.mikhail.portfolio.notification.NotificationEvent;
+import com.mikhail.portfolio.notification.PortfolioEventPublisher;
 import com.mikhail.portfolio.service.PositionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -24,9 +26,12 @@ import java.util.List;
 public class PositionController {
 
     private final PositionService positionService;
+    private final PortfolioEventPublisher eventPublisher;
 
-    public PositionController(PositionService positionService) {
+    public PositionController(PositionService positionService,
+                              PortfolioEventPublisher eventPublisher) {
         this.positionService = positionService;
+        this.eventPublisher = eventPublisher;
     }
 
     @GetMapping
@@ -39,6 +44,7 @@ public class PositionController {
                                            @Valid @RequestBody CreatePositionRequestDto dto,
                                            UriComponentsBuilder uriBuilder) {
         Position created = positionService.add(portfolioId, dto);
+        eventPublisher.publish(NotificationEvent.positionCreated(created));
         URI location = uriBuilder
                 .path("/api/portfolios/{portfolioId}/positions/{positionId}")
                 .buildAndExpand(portfolioId, created.getId())
@@ -54,12 +60,16 @@ public class PositionController {
     @PutMapping("/{positionId}")
     public PositionDto update(@PathVariable Long portfolioId, @PathVariable Long positionId,
                               @Valid @RequestBody UpdatePositionRequestDto dto) {
-        return PositionDto.from(positionService.update(portfolioId, positionId, dto));
+        Position updated = positionService.update(portfolioId, positionId, dto);
+        eventPublisher.publish(NotificationEvent.positionUpdated(updated));
+        return PositionDto.from(updated);
     }
 
     @DeleteMapping("/{positionId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long portfolioId, @PathVariable Long positionId) {
+        Position deleted = positionService.get(portfolioId, positionId);
         positionService.delete(portfolioId, positionId);
+        eventPublisher.publish(NotificationEvent.positionDeleted(deleted));
     }
 }

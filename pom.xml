@@ -22,6 +22,7 @@
         <module>common</module>
         <module>portfolio-service</module>
         <module>market-data-service</module>
+        <module>telegram-bot-service</module>
     </modules>
 
     <properties>

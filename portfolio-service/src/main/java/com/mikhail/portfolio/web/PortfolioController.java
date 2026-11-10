@@ -1,6 +1,8 @@
 package com.mikhail.portfolio.web;
 
 import com.mikhail.portfolio.model.Portfolio;
+import com.mikhail.portfolio.notification.NotificationEvent;
+import com.mikhail.portfolio.notification.PortfolioEventPublisher;
 import com.mikhail.portfolio.service.PortfolioService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -24,15 +26,19 @@ import java.util.List;
 public class PortfolioController {
 
     private final PortfolioService portfolioService;
+    private final PortfolioEventPublisher eventPublisher;
 
-    public PortfolioController(PortfolioService portfolioService) {
+    public PortfolioController(PortfolioService portfolioService,
+                               PortfolioEventPublisher eventPublisher) {
         this.portfolioService = portfolioService;
+        this.eventPublisher = eventPublisher;
     }
 
     @PostMapping
     public ResponseEntity<PortfolioDto> create(@Valid @RequestBody CreatePortfolioRequestDto dto,
                                                UriComponentsBuilder uriBuilder) {
         Portfolio created = portfolioService.create(dto);
+        eventPublisher.publish(NotificationEvent.portfolioCreated(created));
         URI location = uriBuilder.path("/api/portfolios/{id}").buildAndExpand(created.getId()).toUri();
         return ResponseEntity.created(location).body(PortfolioDto.from(created));
     }
@@ -55,6 +61,8 @@ public class PortfolioController {
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
+        Portfolio deleted = portfolioService.getById(id);
         portfolioService.delete(id);
+        eventPublisher.publish(NotificationEvent.portfolioDeleted(deleted));
     }
 }
