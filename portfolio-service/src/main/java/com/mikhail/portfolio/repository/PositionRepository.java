@@ -60,6 +60,17 @@ public class PositionRepository {
                 .list();
     }
 
+    public Optional<Position> findByPortfolioIdAndTicker(Long portfolioId, String ticker) {
+        return jdbcClient.sql("""
+                SELECT %s FROM position
+                WHERE portfolio_id = :portfolioId AND ticker = :ticker
+                """.formatted(COLUMNS))
+                .param("portfolioId", portfolioId)
+                .param("ticker", ticker)
+                .query(ROW_MAPPER)
+                .optional();
+    }
+
     public Optional<Position> findById(Long portfolioId, Long positionId) {
         return jdbcClient.sql("""
                 SELECT %s FROM position
