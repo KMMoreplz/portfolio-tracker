@@ -57,6 +57,42 @@ public class GlobalExceptionHandler {
                 "Параметр '" + e.getName() + "' имеет неверный формат", request, null);
     }
 
+    @ExceptionHandler(TransactionNotFoundException.class)
+    public ResponseEntity<ApiError> handleTransactionNotFound(TransactionNotFoundException e,
+                                                              HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, e.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(InsufficientQuantityException.class)
+    public ResponseEntity<ApiError> handleInsufficientQuantity(InsufficientQuantityException e,
+                                                               HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, e.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(InvalidTransactionException.class)
+    public ResponseEntity<ApiError> handleInvalidTransaction(InvalidTransactionException e,
+                                                             HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, e.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<ApiError> handleUserAlreadyExists(UserAlreadyExistsException e,
+                                                            HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, e.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiError> handleInvalidCredentials(InvalidCredentialsException e,
+                                                             HttpServletRequest request) {
+        return build(HttpStatus.UNAUTHORIZED, e.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(NoExchangeRateException.class)
+    public ResponseEntity<ApiError> handleNoExchangeRate(NoExchangeRateException e,
+                                                         HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, e.getMessage(), request, null);
+    }
+
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request,
                                            List<ApiError.FieldErrorDto> fieldErrors) {
         ApiError body = new ApiError(

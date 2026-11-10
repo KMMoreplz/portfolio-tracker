@@ -8,5 +8,16 @@ spring:
   flyway:
     enabled: true
 
+notifications:
+  webhook-url: ${NOTIFICATIONS_WEBHOOK_URL:}
+
+app:
+  security:
+    jwt:
+      # Общий секрет подписи HS256: в проде задаётся через переменную JWT_SECRET.
+      secret: ${JWT_SECRET:dev-only-jwt-secret-please-override-0123456789}
+      # Время жизни токена входа.
+      ttl-minutes: ${JWT_TTL_MINUTES:720}
+
 server:
   port: 8080
