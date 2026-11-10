@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: market-data-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/portfolio_db}
+    username: ${SPRING_DATASOURCE_USERNAME:portfolio}
+    password: ${SPRING_DATASOURCE_PASSWORD:portfolio}
+  flyway:
+    enabled: true
+    schemas: market_data
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+market-data:
+  tickers:
+    - SBER
+    - GAZP
+  refresh-interval-ms: 300000
+  trading-hours:
+    enforced: true
+    start: "10:00"
+    end: "18:35"
+    zone: Europe/Moscow
+  events:
+    webhook-url: ${MARKET_DATA_WEBHOOK_URL:}
+    change-threshold-percent: 0.5
+  news:
+    feeds:
+      - https://smart-lab.ru/news/rss/
+      - https://www.interfax.ru/rss.asp
+      - https://lenta.ru/rss/news
+    limit: 20
+    cache-ttl-seconds: 600
+  smart-lab:
+    base-url: https://smart-lab.ru
+    connect-timeout-ms: 5000
+    read-timeout-ms: 10000
+  resilience:
+    retry:
+      max-attempts: 3
+      wait-duration-ms: 500
+      multiplier: 2.0
+    circuit-breaker:
+      failure-rate-threshold-percent: 50
+      sliding-window-size: 10
+      minimum-number-of-calls: 5
+      wait-duration-in-open-state-ms: 30000
+      permitted-calls-in-half-open-state: 3
+
+t-invest:
+  base-url: https://invest-public-api.tbank.ru/rest
+  token: ${T_INVEST_TOKEN:}
+  connect-timeout-ms: 5000
+  read-timeout-ms: 10000
+
+moex:
+  base-url: https://iss.moex.com/iss
+  connect-timeout-ms: 5000
+  read-timeout-ms: 10000
