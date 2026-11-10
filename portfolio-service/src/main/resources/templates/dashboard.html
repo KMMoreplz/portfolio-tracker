@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Портфель-трекер</title>
+    <link rel="stylesheet" th:href="@{/styles.css}">
+</head>
+<body>
+<header class="app-header">
+    <h1>Портфель-трекер</h1>
+    <p class="subtitle">Портфели и позиции. Все данные приходят из backend API, рыночные котировки не подключены.</p>
+</header>
+
+<div id="global-error" class="banner banner-error" hidden role="alert">
+    <div class="banner-body">
+        <strong class="banner-title">Не получилось выполнить запрос</strong>
+        <span id="global-error-message"></span>
+        <ul id="global-error-fields" class="banner-fields"></ul>
+    </div>
+    <button id="global-error-close" class="banner-close" type="button" aria-label="Закрыть">&times;</button>
+</div>
+
+<div id="global-notice" class="banner banner-notice" hidden role="status">
+    <span id="global-notice-message"></span>
+    <button id="global-notice-close" class="banner-close" type="button" aria-label="Закрыть">&times;</button>
+</div>
+
+<main class="layout">
+    <aside class="panel">
+        <div class="panel-header">
+            <h2>Портфели</h2>
+            <button id="btn-create-portfolio" class="btn btn-primary" type="button">Создать портфель</button>
+        </div>
+        <div id="portfolios-loading" class="loading">Загрузка портфелей…</div>
+        <ul id="portfolio-list" class="portfolio-list" hidden></ul>
+        <p id="portfolio-empty" class="empty" hidden>Портфелей пока нет — создайте первый.</p>
+    </aside>
+
+    <section class="panel" id="detail-panel">
+        <div id="detail-placeholder" class="empty">
+            Выберите портфель слева, чтобы посмотреть позиции и показатели.
+        </div>
+
+        <div id="detail-content" hidden>
+            <div class="panel-header">
+                <div>
+                    <h2 id="portfolio-title"></h2>
+                    <p class="muted" id="portfolio-subtitle"></p>
+                </div>
+                <div class="panel-actions">
+                    <button id="btn-rename-portfolio" class="btn" type="button">Переименовать</button>
+                    <button id="btn-delete-portfolio" class="btn btn-danger" type="button">Удалить портфель</button>
+                </div>
+            </div>
+
+            <div id="positions-loading" class="loading" hidden>Загрузка позиций…</div>
+
+            <div id="detail-body" hidden>
+                <div class="metrics">
+                    <div class="metric-card">
+                        <span class="metric-label">Позиций</span>
+                        <span class="metric-value" id="metric-count">0</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Вложено по средней цене</span>
+                        <span class="metric-value" id="metric-invested">—</span>
+                    </div>
+                    <div class="metric-card metric-note">
+                        <span class="metric-label">О показателях</span>
+                        <span class="metric-text">
+                            Стоимость и доли считаются из введённых данных
+                            (количество × средняя цена). Рыночных котировок и P&amp;L нет —
+                            они появятся после подключения выгрузки брокера.
+                        </span>
+                    </div>
+                </div>
+
+                <div class="panel-header positions-header">
+                    <h3>Позиции</h3>
+                    <button id="btn-add-position" class="btn btn-primary" type="button">Добавить позицию</button>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="positions-table">
+                        <thead>
+                        <tr>
+                            <th>Тикер</th>
+                            <th>Название</th>
+                            <th class="num">Количество</th>
+                            <th class="num">Средняя цена</th>
+                            <th>Валюта</th>
+                            <th class="num">Стоимость</th>
+                            <th class="num">Доля</th>
+                            <th></th>
+                        </tr>
+                        </thead>
+                        <tbody id="positions-body"></tbody>
+                    </table>
+                </div>
+                <p id="positions-empty" class="empty" hidden>В портфеле пока нет позиций.</p>
+                <p class="muted footnote">Доля позиции — в пределах её валюты.</p>
+            </div>
+        </div>
+    </section>
+</main>
+
+<dialog id="portfolio-dialog" class="dialog">
+    <form id="portfolio-form" novalidate>
+        <h3 id="portfolio-dialog-title">Новый портфель</h3>
+        <div class="form-errors" id="portfolio-form-errors" hidden></div>
+        <label class="field">
+            <span>Название</span>
+            <input type="text" id="portfolio-name" name="name" maxlength="100" autocomplete="off" required>
+        </label>
+        <label class="field">
+            <span>Базовая валюта (ISO 4217, по умолчанию RUB)</span>
+            <input type="text" id="portfolio-currency" name="baseCurrency" maxlength="3"
+                   autocomplete="off" placeholder="RUB" class="uppercase">
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn" data-close-dialog>Отмена</button>
+            <button type="submit" class="btn btn-primary" id="portfolio-form-submit">Сохранить</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="position-dialog" class="dialog">
+    <form id="position-form" novalidate>
+        <h3 id="position-dialog-title">Новая позиция</h3>
+        <div class="form-errors" id="position-form-errors" hidden></div>
+        <label class="field">
+            <span>Тикер</span>
+            <input type="text" id="position-ticker" name="ticker" maxlength="32" autocomplete="off"
+                   placeholder="SBER" class="uppercase" required>
+        </label>
+        <label class="field">
+            <span>Название инструмента</span>
+            <input type="text" id="position-instrument-name" name="instrumentName" maxlength="200"
+                   autocomplete="off" placeholder="Сбербанк">
+        </label>
+        <label class="field">
+            <span>Количество</span>
+            <input type="number" id="position-quantity" name="quantity" min="0" step="any" inputmode="decimal"
+                   placeholder="10" required>
+        </label>
+        <label class="field">
+            <span>Средняя цена</span>
+            <input type="number" id="position-average-price" name="averagePrice" min="0" step="any"
+                   inputmode="decimal" placeholder="150.5" required>
+        </label>
+        <label class="field">
+            <span>Валюта (ISO 4217, по умолчанию RUB)</span>
+            <input type="text" id="position-currency" name="currency" maxlength="3" autocomplete="off"
+                   placeholder="RUB" class="uppercase">
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn" data-close-dialog>Отмена</button>
+            <button type="submit" class="btn btn-primary" id="position-form-submit">Сохранить</button>
+        </div>
+    </form>
+</dialog>
+
+<div id="busy-overlay" class="busy-overlay" hidden>
+    <div class="spinner"></div>
+    <span id="busy-label">Выполняется запрос…</span>
+</div>
+
+<script th:src="@{/app.js}"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: portfolio-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/portfolio_db}
+    username: ${SPRING_DATASOURCE_USERNAME:portfolio}
+    password: ${SPRING_DATASOURCE_PASSWORD:portfolio}
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
