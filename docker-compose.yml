@@ -25,5 +25,73 @@ services:
     ports:
       - "8083:8080"
 
+  # Котировки, дивиденды, новости: общая БД, своя схема market_data (Flyway внутри сервиса).
+  market-data-service:
+    build:
+      context: .
+      dockerfile: market-data-service/Dockerfile
+    container_name: market-data-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/portfolio_db
+      SPRING_DATASOURCE_USERNAME: portfolio
+      SPRING_DATASOURCE_PASSWORD: portfolio
+      MARKET_DATA_WEBHOOK_URL: http://telegram-bot-service:8082/api/events
+      T_INVEST_TOKEN: ${T_INVEST_TOKEN:-}
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Ядро: REST API портфеля, аутентификация, метрики, настройки.
+  portfolio-service:
+    build:
+      context: .
+      dockerfile: portfolio-service/Dockerfile
+    container_name: portfolio-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/portfolio_db
+      SPRING_DATASOURCE_USERNAME: portfolio
+      SPRING_DATASOURCE_PASSWORD: portfolio
+      MARKET_DATA_BASE_URL: http://market-data-service:8081
+      NOTIFICATIONS_WEBHOOK_URL: http://telegram-bot-service:8082/api/events
+      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-please-override-0123456789}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      market-data-service:
+        condition: service_started
+
+  # Уведомления в Telegram; без TELEGRAM_BOT_TOKEN работает без отправки сообщений.
+  telegram-bot-service:
+    build:
+      context: .
+      dockerfile: telegram-bot-service/Dockerfile
+    container_name: telegram-bot-service
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      PORTFOLIO_SERVICE_URL: http://portfolio-service:8080
+    ports:
+      - "8082:8082"
+    depends_on:
+      - portfolio-service
+
+  # Веб-фронтенд: статика React + nginx-прокси к backend-сервисам.
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: portfolio-frontend
+    environment:
+      PORTFOLIO_UPSTREAM: portfolio-service:8080
+      MARKET_DATA_UPSTREAM: market-data-service:8081
+    ports:
+      - "8084:80"
+    depends_on:
+      - portfolio-service
+      - market-data-service
+
 volumes:
   portfolio-pgdata:

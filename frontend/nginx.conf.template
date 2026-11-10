@@ -1,0 +1,32 @@
+# Шаблон nginx: ${PORTFOLIO_UPSTREAM} и ${MARKET_DATA_UPSTREAM} подставляет
+# docker-entrypoint из переменных окружения контейнера; $host и прочие runtime-переменные
+# nginx оставляет как есть (envsubst заменяет только переменные окружения).
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # REST API portfolio-service (мой, транзакции, метрики, настройки)
+    location /api/ {
+        proxy_pass http://${PORTFOLIO_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # market-data-service: /market/... → /api/... (у сервиса все маршруты под /api)
+    location /market/ {
+        rewrite ^/market/(.*)$ /api/$1 break;
+        proxy_pass http://${MARKET_DATA_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # SPA: маршруты обрабатывает React Router
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
