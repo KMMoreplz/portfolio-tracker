@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { request } from '../api/client'
 import { formatDate, formatMoney, formatQuantity, transactionTypeLabels } from '../api/format'
@@ -8,6 +8,8 @@ import ErrorBanner from '../components/ErrorBanner'
 import Modal from '../components/Modal'
 import TransactionForm from '../components/TransactionForm'
 import { usePortfolios } from '../portfolios/PortfoliosContext'
+import { selectTransactions } from './transactions-view'
+import './transactions-page.css'
 
 const FILTERS: Array<{ value: TransactionType | ''; label: string }> = [
   { value: '', label: 'Все операции' },
@@ -20,6 +22,21 @@ const FILTERS: Array<{ value: TransactionType | ''; label: string }> = [
 export default function TransactionsPage() {
   const { selected, loading: listLoading, error: listError, refresh } = usePortfolios()
 
+  if (listLoading) return <div className="page-loading">Загрузка…</div>
+  if (listError) return <ErrorBanner message={listError} onRetry={() => void refresh()} />
+  if (!selected) {
+    return (
+      <section className="page">
+        <h1 className="page-title">Сделки</h1>
+        <EmptyState title="Нет портфеля" hint="Сначала создайте портфель на дашборде."
+          action={<Link className="btn btn-primary" to="/">К дашборду</Link>} />
+      </section>
+    )
+  }
+  return <PortfolioTransactions key={selected.id} portfolioId={selected.id} name={selected.name} />
+}
+
+function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; name: string }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,25 +44,34 @@ export default function TransactionsPage() {
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; transaction: Transaction } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Transaction | null>(null)
 
-  const portfolioId = selected?.id ?? null
+  const [ticker, setTicker] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
+  const generation = useRef(0)
+  const active = useRef(false)
+  const invalidRange = Boolean(from && to && from > to)
+  const visible = selectTransactions(transactions, { ticker, type: filter, from, to, order })
+  const reset = () => { setTicker(''); setFilter(''); setFrom(''); setTo(''); setOrder('desc') }
 
   const load = useCallback(async () => {
-    if (portfolioId === null) return
+    const current = ++generation.current
     setLoading(true)
     setError(null)
     try {
-      const query = filter ? `?type=${filter}` : ''
-      const list = await request<Transaction[]>(`/portfolios/${portfolioId}/transactions${query}`)
-      setTransactions(list)
+      const list = await request<Transaction[]>(`/portfolios/${portfolioId}/transactions`)
+      if (active.current && current === generation.current) setTransactions(list)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить операции')
+      if (active.current && current === generation.current) setError(e instanceof Error ? e.message : 'Не удалось загрузить операции')
     } finally {
-      setLoading(false)
+      if (active.current && current === generation.current) setLoading(false)
     }
-  }, [portfolioId, filter])
+  }, [portfolioId])
 
   useEffect(() => {
+    active.current = true
     void load()
+    return () => { active.current = false; generation.current++ }
   }, [load])
 
   async function remove(transaction: Transaction) {
@@ -53,71 +79,47 @@ export default function TransactionsPage() {
       await request<void>(`/portfolios/${portfolioId}/transactions/${transaction.id}`, {
         method: 'DELETE',
       })
-      await load()
+      if (active.current) await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось удалить операцию')
+      if (active.current) setError(e instanceof Error ? e.message : 'Не удалось удалить операцию')
     }
-  }
-
-  if (listLoading) {
-    return <div className="page-loading">Загрузка…</div>
-  }
-  if (listError) {
-    return <ErrorBanner message={listError} onRetry={() => void refresh()} />
-  }
-  if (!selected) {
-    return (
-      <section className="page">
-        <h1 className="page-title">Сделки</h1>
-        <EmptyState
-          title="Нет портфеля"
-          hint="Сначала создайте портфель на дашборде."
-          action={
-            <Link className="btn btn-primary" to="/">
-              К дашборду
-            </Link>
-          }
-        />
-      </section>
-    )
   }
 
   return (
     <section className="page">
       <div className="page-header">
-        <h1 className="page-title">Сделки — {selected.name}</h1>
+        <h1 className="page-title">Сделки — {name}</h1>
         <div className="page-actions">
-          <select value={filter} onChange={(event) => setFilter(event.target.value as TransactionType | '')}>
-            {FILTERS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
           <button type="button" className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
             Добавить операцию
           </button>
         </div>
       </div>
+      <div className="transactions-filters">
+        <label className="field"><span className="field-label">Поиск по тикеру</span><input value={ticker} onChange={event => setTicker(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Вид операции</span><select value={filter} onChange={(event) => setFilter(event.target.value as TransactionType | '')}>
+          {FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select></label>
+        <label className="field"><span className="field-label">С даты</span><input type="date" value={from} onChange={event => setFrom(event.target.value)} /></label>
+        <label className="field"><span className="field-label">По дату</span><input type="date" value={to} onChange={event => setTo(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Сортировка</span><select value={order} onChange={event => setOrder(event.target.value as 'asc' | 'desc')}><option value="desc">Новые сначала</option><option value="asc">Старые сначала</option></select></label>
+        <button type="button" className="btn" onClick={reset}>Сбросить фильтры</button>
+      </div>
+      {invalidRange && <div role="alert" className="error-banner">Дата начала позже даты окончания</div>}
 
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
       {loading && <div className="page-loading">Загрузка операций…</div>}
 
-      {!loading && transactions.length === 0 && !error && (
+      {!loading && !error && !invalidRange && transactions.length === 0 && (
         <div className="card">
-          <EmptyState
-            title={filter ? 'Операций такого вида нет' : 'Операций пока нет'}
-            hint="Добавьте покупку, продажу или дивиденд — справочник бумаг подскажет тикер."
-            action={
-              <button type="button" className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
-                Добавить операцию
-              </button>
-            }
-          />
+          <EmptyState title="Операций пока нет" hint="Добавьте покупку, продажу или дивиденд." />
         </div>
       )}
+      {!loading && !error && !invalidRange && transactions.length > 0 && visible.length === 0 && (
+        <div className="card"><EmptyState title="По фильтрам ничего не найдено" hint="Измените или сбросьте фильтры." action={<button type="button" className="btn" onClick={reset}>Сбросить фильтры</button>} /></div>
+      )}
 
-      {!loading && transactions.length > 0 && (
+      {!loading && !error && !invalidRange && visible.length > 0 && (
         <div className="card">
           <div className="table-wrap">
             <table className="data-table">
@@ -134,7 +136,7 @@ export default function TransactionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((transaction) => (
+                {visible.map((transaction) => (
                   <tr key={transaction.id}>
                     <td>{formatDate(transaction.executedAt)}</td>
                     <td>
@@ -210,9 +212,10 @@ export default function TransactionsPage() {
           onClose={() => setModal(null)}
         >
           <TransactionForm
-            portfolioId={selected.id}
+            portfolioId={portfolioId}
             transaction={modal.mode === 'edit' ? modal.transaction : undefined}
             onSaved={() => {
+              if (!active.current) return
               setModal(null)
               void load()
             }}
