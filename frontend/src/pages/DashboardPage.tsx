@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import './dashboard-positions.css'
 import { Link } from 'react-router-dom'
 import {
   Area,
@@ -36,6 +37,7 @@ export default function DashboardPage() {
     refresh,
   } = usePortfolios()
 
+  const [search, setSearch] = useState({ portfolioId: null as number | null, text: '' })
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [metricsPortfolioId, setMetricsPortfolioId] = useState<number | null>(null)
   const [history, setHistory] = useState<ValueHistory | null>(null)
@@ -43,8 +45,14 @@ export default function DashboardPage() {
   const [pageError, setPageError] = useState<string | null>(null)
 
   const portfolioId = selected?.id ?? null
+  const searchText = search.portfolioId === portfolioId ? search.text : ''
+  const query = searchText.trim().toLowerCase()
+  const visiblePositions = metrics?.positions.filter(position =>
+    position.ticker.toLowerCase().includes(query) || (position.instrumentName?.toLowerCase().includes(query) ?? false),
+  ) ?? []
 
   useEffect(() => {
+    setSearch({ portfolioId, text: '' })
     if (portfolioId === null) {
       setMetrics(null)
       setHistory(null)
@@ -216,6 +224,13 @@ export default function DashboardPage() {
 
               <div className="card">
                 <h2 className="card-title">Позиции</h2>
+                <div className="positions-search">
+                  <label>Поиск по позициям
+                    <input type="search" value={searchText} onChange={event => setSearch({ portfolioId, text: event.target.value })} />
+                  </label>
+                  <button type="button" className="btn" onClick={() => setSearch({ portfolioId, text: '' })}>Сбросить поиск</button>
+                </div>
+                {visiblePositions.length === 0 && <p role="status">По запросу позиции не найдены. Сбросьте поиск, чтобы показать все позиции.</p>}
                 <div className="table-wrap">
                   <table className="data-table">
                     <thead>
@@ -230,7 +245,7 @@ export default function DashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {metrics.positions.map((position) => (
+                      {visiblePositions.map((position) => (
                         <tr key={position.ticker}>
                           <td>
                             <Link to={`/security/${encodeURIComponent(position.ticker)}`} className="ticker-link">
