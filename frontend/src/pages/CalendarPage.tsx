@@ -12,36 +12,6 @@ export default function CalendarPage() {
   const { portfolios, loading: listLoading, error: listError, selected, select, refresh } =
     usePortfolios()
 
-  const [calendar, setCalendar] = useState<DividendCalendar | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [reload, setReload] = useState(0)
-
-  const portfolioId = selected?.id ?? null
-
-  useEffect(() => {
-    if (portfolioId === null) {
-      setCalendar(null)
-      return
-    }
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    request<DividendCalendar>(`/portfolios/${portfolioId}/dividend-calendar`)
-      .then((value) => {
-        if (!cancelled) setCalendar(value)
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Не удалось загрузить календарь')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [portfolioId, reload])
-
   if (listLoading) return <div className="page-loading">Загрузка…</div>
   if (listError) return <ErrorBanner message={listError} onRetry={() => void refresh()} />
 
@@ -63,7 +33,10 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {!selected && (
+      {selected ? (
+        // Keep the selector mounted, but never reuse a previous selection's calendar state.
+        <PortfolioCalendar key={selected.id} portfolioId={selected.id} />
+      ) : (
         <div className="card">
           <EmptyState
             title="Нет портфеля"
@@ -76,77 +49,122 @@ export default function CalendarPage() {
           />
         </div>
       )}
-
-      {selected && loading && <div className="page-loading">Загрузка календаря…</div>}
-      {selected && error && <ErrorBanner message={error} onRetry={() => setReload((value) => value + 1)} />}
-      {selected && !loading && !error && calendar && (
-        <>
-          {!calendar.marketDataAvailable && (
-            <div className="warning-banner" role="alert">
-              market-data-service недоступен — данные о предстоящих выплатах временно получить
-              нельзя. Список будет пуст не потому, что выплат нет.
-            </div>
-          )}
-
-          <div className="card">
-            <h2 className="card-title">Предстоящие выплаты</h2>
-            {calendar.items.length === 0 ? (
-              <EmptyState
-                title={calendar.marketDataAvailable ? 'Предстоящих выплат нет' : 'Нет данных'}
-                hint={
-                  calendar.marketDataAvailable
-                    ? 'По бумагам текущего портфеля ближайших дивидендов не запланировано.'
-                    : 'Источник данных о выплатах недоступен — попробуйте позже.'
-                }
-              />
-            ) : (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Дата выплаты</th>
-                      <th>Дата отсечки</th>
-                      <th>Бумага</th>
-                      <th className="num">На бумагу</th>
-                      <th className="num">Количество</th>
-                      <th className="num">Выплата</th>
-                      <th className="num">В базовой валюте</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {calendar.items.map((item, index) => (
-                      <tr key={`${item.ticker}-${index}`}>
-                        <td>{formatDate(item.paymentDate)}</td>
-                        <td>{formatDate(item.exDate)}</td>
-                        <td>
-                          <Link to={`/security/${encodeURIComponent(item.ticker)}`} className="ticker-link">
-                            {item.ticker}
-                          </Link>
-                          {item.instrumentName && (
-                            <div className="muted small">{item.instrumentName}</div>
-                          )}
-                        </td>
-                        <td className="num">
-                          {formatMoney(item.amountPerShare)} {item.currency ?? ''}
-                        </td>
-                        <td className="num">{formatQuantity(item.quantity)}</td>
-                        <td className="num">
-                          {formatMoney(item.payout)} {item.currency ?? ''}
-                        </td>
-                        <td className="num">
-                          {item.payoutInBase === null
-                            ? '—'
-                            : `${formatMoney(item.payoutInBase)} ${calendar.baseCurrency}`}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
     </section>
+  )
+}
+
+type CalendarState =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; calendar: DividendCalendar }
+
+function PortfolioCalendar({ portfolioId }: { portfolioId: number }) {
+  const [state, setState] = useState<CalendarState>({ status: 'loading' })
+  const [reload, setReload] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    request<DividendCalendar>(`/portfolios/${portfolioId}/dividend-calendar`)
+      .then((value) => {
+        if (cancelled) return
+        if (value?.portfolioId !== portfolioId) {
+          setState({ status: 'error', message: 'Сервер вернул календарь другого портфеля' })
+          return
+        }
+        setState({ status: 'ready', calendar: value })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setState({
+            status: 'error',
+            message: e instanceof Error ? e.message : 'Не удалось загрузить календарь',
+          })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [portfolioId, reload])
+
+  if (state.status === 'loading') return <div className="page-loading">Загрузка календаря…</div>
+  if (state.status === 'error') {
+    return (
+      <ErrorBanner
+        message={state.message}
+        onRetry={() => {
+          setState({ status: 'loading' })
+          setReload((value) => value + 1)
+        }}
+      />
+    )
+  }
+
+  const { calendar } = state
+  return (
+    <>
+      {!calendar.marketDataAvailable && (
+        <div className="warning-banner" role="alert">
+          market-data-service недоступен — данные о предстоящих выплатах временно получить
+          нельзя. Список будет пуст не потому, что выплат нет.
+        </div>
+      )}
+      <div className="card">
+        <h2 className="card-title">Предстоящие выплаты</h2>
+        {calendar.items.length === 0 ? (
+          <EmptyState
+            title={calendar.marketDataAvailable ? 'Предстоящих выплат нет' : 'Нет данных'}
+            hint={
+              calendar.marketDataAvailable
+                ? 'По бумагам текущего портфеля ближайших дивидендов не запланировано.'
+                : 'Источник данных о выплатах недоступен — попробуйте позже.'
+            }
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Дата выплаты</th>
+                  <th>Дата отсечки</th>
+                  <th>Бумага</th>
+                  <th className="num">На бумагу</th>
+                  <th className="num">Количество</th>
+                  <th className="num">Выплата</th>
+                  <th className="num">В базовой валюте</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calendar.items.map((item, index) => (
+                  <tr key={`${item.ticker}-${index}`}>
+                    <td>{formatDate(item.paymentDate)}</td>
+                    <td>{formatDate(item.exDate)}</td>
+                    <td>
+                      <Link to={`/security/${encodeURIComponent(item.ticker)}`} className="ticker-link">
+                        {item.ticker}
+                      </Link>
+                      {item.instrumentName && (
+                        <div className="muted small">{item.instrumentName}</div>
+                      )}
+                    </td>
+                    <td className="num">
+                      {formatMoney(item.amountPerShare)} {item.currency ?? ''}
+                    </td>
+                    <td className="num">{formatQuantity(item.quantity)}</td>
+                    <td className="num">
+                      {formatMoney(item.payout)} {item.currency ?? ''}
+                    </td>
+                    <td className="num">
+                      {item.payoutInBase === null
+                        ? '—'
+                        : `${formatMoney(item.payoutInBase)} ${calendar.baseCurrency}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
