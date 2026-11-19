@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { request } from '../api/client'
 import { formatDate, formatMoney, formatQuantity, transactionTypeLabels } from '../api/format'
@@ -8,7 +8,7 @@ import ErrorBanner from '../components/ErrorBanner'
 import Modal from '../components/Modal'
 import TransactionForm from '../components/TransactionForm'
 import { usePortfolios } from '../portfolios/PortfoliosContext'
-import { selectTransactions } from './transactions-view'
+import { paginateTransactions, selectTransactions } from './transactions-view'
 import './transactions-page.css'
 
 const FILTERS: Array<{ value: TransactionType | ''; label: string }> = [
@@ -38,7 +38,7 @@ export default function TransactionsPage() {
 
 function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; name: string }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<TransactionType | ''>('')
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; transaction: Transaction } | null>(null)
@@ -48,11 +48,20 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [order, setOrder] = useState<'asc' | 'desc'>('desc')
+  const [requestedPage, setPage] = useState(1)
   const generation = useRef(0)
   const active = useRef(false)
   const invalidRange = Boolean(from && to && from > to)
-  const visible = selectTransactions(transactions, { ticker, type: filter, from, to, order })
-  const reset = () => { setTicker(''); setFilter(''); setFrom(''); setTo(''); setOrder('desc') }
+  const matches = useMemo(() => selectTransactions(transactions, { ticker, type: filter, from, to, order }),
+    [transactions, ticker, filter, from, to, order])
+  const { page, pageCount, rows } = paginateTransactions(matches, requestedPage)
+  // Keep the last available page as the new position after a list refresh shrinks the results.
+  if (page !== requestedPage) setPage(page)
+  function changeCriteria<T>(setValue: (value: T) => void, value: T) {
+    setValue(value)
+    setPage(1)
+  }
+  const reset = () => { setTicker(''); setFilter(''); setFrom(''); setTo(''); setOrder('desc'); setPage(1) }
 
   const load = useCallback(async () => {
     const current = ++generation.current
@@ -96,13 +105,13 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
         </div>
       </div>
       <div className="transactions-filters">
-        <label className="field"><span className="field-label">Поиск по тикеру</span><input value={ticker} onChange={event => setTicker(event.target.value)} /></label>
-        <label className="field"><span className="field-label">Вид операции</span><select value={filter} onChange={(event) => setFilter(event.target.value as TransactionType | '')}>
+        <label className="field"><span className="field-label">Поиск по тикеру</span><input value={ticker} onChange={event => changeCriteria(setTicker, event.target.value)} /></label>
+        <label className="field"><span className="field-label">Вид операции</span><select value={filter} onChange={(event) => changeCriteria(setFilter, event.target.value as TransactionType | '')}>
           {FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
-        <label className="field"><span className="field-label">С даты</span><input type="date" value={from} onChange={event => setFrom(event.target.value)} /></label>
-        <label className="field"><span className="field-label">По дату</span><input type="date" value={to} onChange={event => setTo(event.target.value)} /></label>
-        <label className="field"><span className="field-label">Сортировка</span><select value={order} onChange={event => setOrder(event.target.value as 'asc' | 'desc')}><option value="desc">Новые сначала</option><option value="asc">Старые сначала</option></select></label>
+        <label className="field"><span className="field-label">С даты</span><input type="date" value={from} onChange={event => changeCriteria(setFrom, event.target.value)} /></label>
+        <label className="field"><span className="field-label">По дату</span><input type="date" value={to} onChange={event => changeCriteria(setTo, event.target.value)} /></label>
+        <label className="field"><span className="field-label">Сортировка</span><select value={order} onChange={event => changeCriteria(setOrder, event.target.value as 'asc' | 'desc')}><option value="desc">Новые сначала</option><option value="asc">Старые сначала</option></select></label>
         <button type="button" className="btn" onClick={reset}>Сбросить фильтры</button>
       </div>
       {invalidRange && <div role="alert" className="error-banner">Дата начала позже даты окончания</div>}
@@ -110,16 +119,29 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
       {loading && <div className="page-loading">Загрузка операций…</div>}
 
+      {!loading && !error && !invalidRange && (
+        <div className="transactions-summary">
+          <span role="status">Найдено в загруженном списке: {matches.length}</span>
+          {pageCount > 1 && (
+            <nav className="transactions-pagination" aria-label="Страницы операций">
+              <button type="button" className="btn" disabled={page === 1} onClick={() => setPage(page - 1)}>Назад</button>
+              <span aria-live="polite">Страница {page} из {pageCount}</span>
+              <button type="button" className="btn" disabled={page === pageCount} onClick={() => setPage(page + 1)}>Далее</button>
+            </nav>
+          )}
+        </div>
+      )}
+
       {!loading && !error && !invalidRange && transactions.length === 0 && (
         <div className="card">
           <EmptyState title="Операций пока нет" hint="Добавьте покупку, продажу или дивиденд." />
         </div>
       )}
-      {!loading && !error && !invalidRange && transactions.length > 0 && visible.length === 0 && (
+      {!loading && !error && !invalidRange && transactions.length > 0 && matches.length === 0 && (
         <div className="card"><EmptyState title="По фильтрам ничего не найдено" hint="Измените или сбросьте фильтры." action={<button type="button" className="btn" onClick={reset}>Сбросить фильтры</button>} /></div>
       )}
 
-      {!loading && !error && !invalidRange && visible.length > 0 && (
+      {!loading && !error && !invalidRange && matches.length > 0 && (
         <div className="card">
           <div className="table-wrap">
             <table className="data-table">
@@ -136,7 +158,7 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
                 </tr>
               </thead>
               <tbody>
-                {visible.map((transaction) => (
+                {rows.map((transaction) => (
                   <tr key={transaction.id}>
                     <td>{formatDate(transaction.executedAt)}</td>
                     <td>

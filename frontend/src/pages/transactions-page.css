@@ -10,3 +10,15 @@
   flex: 1 1 10rem;
   min-width: 0;
 }
+
+.transactions-summary,
+.transactions-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.transactions-summary {
+  justify-content: space-between;
+}

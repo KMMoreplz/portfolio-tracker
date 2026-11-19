@@ -32,3 +32,12 @@ export function selectTransactions<T extends Row>(rows: T[], filters: Filters): 
       || a.row.id - b.row.id))
     .map(({ row }) => row)
 }
+
+const PAGE_SIZE = 10
+
+export function paginateTransactions<T>(matches: readonly T[], requestedPage: number) {
+  const pageCount = Math.ceil(matches.length / PAGE_SIZE)
+  const page = Math.min(Math.max(requestedPage, 1), Math.max(pageCount, 1))
+  const offset = (page - 1) * PAGE_SIZE
+  return { page, pageCount, rows: matches.slice(offset, offset + PAGE_SIZE) }
+}
