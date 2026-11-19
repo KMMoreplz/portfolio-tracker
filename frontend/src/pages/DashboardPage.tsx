@@ -37,6 +37,7 @@ export default function DashboardPage() {
   } = usePortfolios()
 
   const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [metricsPortfolioId, setMetricsPortfolioId] = useState<number | null>(null)
   const [history, setHistory] = useState<ValueHistory | null>(null)
   const [pageLoading, setPageLoading] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -58,7 +59,9 @@ export default function DashboardPage() {
     ])
       .then(([nextMetrics, nextHistory]) => {
         if (!cancelled) {
+          if (nextMetrics.portfolioId !== portfolioId) throw new Error('Показатели относятся к другому портфелю')
           setMetrics(nextMetrics)
+          setMetricsPortfolioId(portfolioId)
           setHistory(nextHistory)
         }
       })
@@ -123,7 +126,7 @@ export default function DashboardPage() {
       {pageLoading && <div className="page-loading">Загрузка показателей…</div>}
       {pageError && <ErrorBanner message={pageError} />}
 
-      {!pageLoading && !pageError && metrics && (
+      {!pageLoading && !pageError && metrics && metricsPortfolioId === portfolioId && (
         <>
           <div className="stats-grid">
             <div className="stat-card">
@@ -232,6 +235,10 @@ export default function DashboardPage() {
                           <td>
                             <Link to={`/security/${encodeURIComponent(position.ticker)}`} className="ticker-link">
                               {position.ticker}
+                            </Link>
+                            {' '}
+                            <Link to={`/transactions?ticker=${encodeURIComponent(position.ticker.trim())}`}>
+                              Сделки
                             </Link>
                             {position.instrumentName && (
                               <div className="muted small">{position.instrumentName}</div>

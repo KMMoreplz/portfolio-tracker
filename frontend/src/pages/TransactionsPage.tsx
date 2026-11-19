@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { request } from '../api/client'
 import { formatDate, formatMoney, formatQuantity, transactionTypeLabels } from '../api/format'
 import type { Transaction, TransactionType } from '../api/types'
@@ -37,6 +37,10 @@ export default function TransactionsPage() {
 }
 
 function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; name: string }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tickerParams = searchParams.getAll('ticker')
+  const exactTicker = tickerParams.length === 1 ? tickerParams[0].trim().toLowerCase() : ''
+  const searchKey = searchParams.toString()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -49,19 +53,32 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
   const [to, setTo] = useState('')
   const [order, setOrder] = useState<'asc' | 'desc'>('desc')
   const [requestedPage, setPage] = useState(1)
+  const [previousSearch, setPreviousSearch] = useState(searchKey)
+  if (searchKey !== previousSearch) {
+    setPreviousSearch(searchKey)
+    setPage(1)
+  }
   const generation = useRef(0)
   const active = useRef(false)
   const invalidRange = Boolean(from && to && from > to)
-  const matches = useMemo(() => selectTransactions(transactions, { ticker, type: filter, from, to, order }),
-    [transactions, ticker, filter, from, to, order])
-  const { page, pageCount, rows } = paginateTransactions(matches, requestedPage)
+  const matches = useMemo(() => selectTransactions(transactions, { ticker, exactTicker, type: filter, from, to, order }),
+    [transactions, ticker, exactTicker, filter, from, to, order])
+  const effectivePage = searchKey !== previousSearch ? 1 : requestedPage
+  const { page, pageCount, rows } = paginateTransactions(matches, effectivePage)
   // Keep the last available page as the new position after a list refresh shrinks the results.
-  if (page !== requestedPage) setPage(page)
+  if (page !== effectivePage) setPage(page)
   function changeCriteria<T>(setValue: (value: T) => void, value: T) {
     setValue(value)
     setPage(1)
   }
-  const reset = () => { setTicker(''); setFilter(''); setFrom(''); setTo(''); setOrder('desc'); setPage(1) }
+  const clearExact = () => {
+    if (searchParams.has('ticker')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('ticker')
+      setSearchParams(next)
+    }
+  }
+  const reset = () => { clearExact(); setTicker(''); setFilter(''); setFrom(''); setTo(''); setOrder('desc'); setPage(1) }
 
   const load = useCallback(async () => {
     const current = ++generation.current
@@ -105,7 +122,8 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
         </div>
       </div>
       <div className="transactions-filters">
-        <label className="field"><span className="field-label">Поиск по тикеру</span><input value={ticker} onChange={event => changeCriteria(setTicker, event.target.value)} /></label>
+        <label className="field"><span className="field-label">Поиск по тикеру</span><input value={ticker} onChange={event => { clearExact(); changeCriteria(setTicker, event.target.value) }} /></label>
+        {exactTicker && <span>Точный тикер: {exactTicker.toUpperCase()}</span>}
         <label className="field"><span className="field-label">Вид операции</span><select value={filter} onChange={(event) => changeCriteria(setFilter, event.target.value as TransactionType | '')}>
           {FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>

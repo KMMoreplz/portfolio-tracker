@@ -1,5 +1,5 @@
 type Row = { id: number; ticker: string; type: string; executedAt: string }
-type Filters = { ticker: string; type: string; from: string; to: string; order: 'asc' | 'desc' }
+type Filters = { ticker: string; exactTicker?: string; type: string; from: string; to: string; order: 'asc' | 'desc' }
 
 function localMidnight(day: string, next = false): number {
   const [year, month, date] = day.split('-').map(Number)
@@ -20,11 +20,12 @@ function instantKey(iso: string) {
 
 export function selectTransactions<T extends Row>(rows: T[], filters: Filters): T[] {
   const ticker = filters.ticker.trim().toLowerCase()
+  const exactTicker = filters.exactTicker?.trim().toLowerCase()
   const start = filters.from ? localMidnight(filters.from) : -Infinity
   const end = filters.to ? localMidnight(filters.to, true) : Infinity
   const direction = filters.order === 'asc' ? 1 : -1
   return rows
-    .filter(row => row.ticker.toLowerCase().includes(ticker) && (!filters.type || row.type === filters.type))
+    .filter(row => (exactTicker ? row.ticker.trim().toLowerCase() === exactTicker : row.ticker.toLowerCase().includes(ticker)) && (!filters.type || row.type === filters.type))
     .map(row => ({ row, ...instantKey(row.executedAt) }))
     .filter(({ milliseconds }) => milliseconds >= start && milliseconds < end)
     .sort((a, b) => direction * (a.milliseconds - b.milliseconds
