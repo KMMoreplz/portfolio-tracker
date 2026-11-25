@@ -48,6 +48,7 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
   const [modal, setModal] = useState<{ mode: 'create' } | { mode: 'edit'; transaction: Transaction } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Transaction | null>(null)
 
+  const tickerInput = useRef<HTMLInputElement>(null)
   const [ticker, setTicker] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -122,8 +123,8 @@ function PortfolioTransactions({ portfolioId, name }: { portfolioId: number; nam
         </div>
       </div>
       <div className="transactions-filters">
-        <label className="field"><span className="field-label">Поиск по тикеру</span><input value={ticker} onChange={event => { clearExact(); changeCriteria(setTicker, event.target.value) }} /></label>
-        {exactTicker && <span>Точный тикер: {exactTicker.toUpperCase()}</span>}
+        <label className="field"><span className="field-label">Поиск по тикеру</span><input ref={tickerInput} value={ticker} onChange={event => { clearExact(); changeCriteria(setTicker, event.target.value) }} /></label>
+        {exactTicker && <><span>Точный тикер: {exactTicker.toUpperCase()}</span><button type="button" className="btn" onClick={() => { tickerInput.current?.focus(); clearExact() }}>Снять точный тикер</button></>}
         <label className="field"><span className="field-label">Вид операции</span><select value={filter} onChange={(event) => changeCriteria(setFilter, event.target.value as TransactionType | '')}>
           {FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>

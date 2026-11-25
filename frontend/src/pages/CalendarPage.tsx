@@ -145,6 +145,9 @@ function PortfolioCalendar({ portfolioId }: { portfolioId: number }) {
                       {item.instrumentName && (
                         <div className="muted small">{item.instrumentName}</div>
                       )}
+                      {item.ticker.trim() && (
+                        <div><Link to={`/transactions?ticker=${encodeURIComponent(item.ticker.trim())}`}>Сделки</Link></div>
+                      )}
                     </td>
                     <td className="num">
                       {formatMoney(item.amountPerShare)} {item.currency ?? ''}

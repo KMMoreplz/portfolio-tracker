@@ -89,7 +89,7 @@ const dom = `(() => {
     id: select?.value ?? null, name: select?.selectedOptions[0]?.textContent.trim() ?? null,
     loading: texts('.page-loading'), errors: texts('.error-banner span'), warnings: texts('.warning-banner').map(text => text.replace(/\\s+/g, ' ')),
     empty: texts('.empty-state-title'), retry: texts('.error-banner button'),
-    rows: all('tbody tr').map(tr => ({ cells: Array.from(tr.cells, td => td.innerText.trim()), href: tr.querySelector('a')?.getAttribute('href') })),
+    rows: all('tbody tr').map(tr => ({ cells: Array.from(tr.cells, (td, index) => index === 2 ? [...td.childNodes].filter(n => !(n.nodeType === 1 && n.querySelector?.('a[href^="/transactions?"]'))).map(n => n.innerText ?? n.textContent).join('').trim() : td.innerText.trim()), href: tr.querySelector('a.ticker-link')?.getAttribute('href'), trades: [...tr.querySelectorAll('a')].filter(a => a.textContent.trim() === 'Сделки').map(a => a.getAttribute('href')) })),
   };
 })()`
 
@@ -143,7 +143,7 @@ await runBrowser({ routes, demo }, async ({ call, evaluate, save, reload, closed
     path: '/calendar', search: '', heading: [title], id: id === null ? null : String(id), name: names[id] ?? null,
     rows: [], loading: [], errors: [], warnings: [], empty: [], retry: [], ...overrides,
   })
-  const rightRow = (id, variant) => calendarState(id, { rows: [expected[variant]] })
+  const rightRow = (id, variant) => calendarState(id, { rows: [{ ...expected[variant], trades: [`/transactions?ticker=${encodeURIComponent(variants[variant].ticker)}`] }] })
   const expectState = async (label, expectedState, evidence = label) => {
     const observed = demo ? await until(async () => {
       const current = await state()
